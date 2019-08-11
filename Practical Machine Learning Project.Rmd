@@ -1,0 +1,127 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Anthony Oliver A. Nagallo"
+date: "August 10, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Introduction
+
+In this project we will make a prediction model. The data used in thise project are provided by "Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements"  
+
+With use of devices such as Jawbone Up, Nike FuelBand, and Fitbit it has been easy to collect data about personal activity. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, The goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+
+###Methodology
+In creating these project the following major steps are followed:  
+* Data Preprocessing  
+* Data Splitting  
+* Model Creation  
+* Model validation and Evaluation  
+* Prediction  
+
+
+####Load Library and data set  
+```{r dfadas, message=FALSE,warning=FALSE}
+library(caret)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv',
+                     sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+testing <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv',
+                    sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+```
+
+####Data Preprocessing  
+
+
+```{r eval = T}
+#Check how many attributes and observations 
+dim(training); dim(testing)
+```
+
+Remove NA and variables that are not affecting to the outcome  
+```{r}
+train_set <- training[,colSums(is.na(training)) == 0]
+test_set <- testing[,colSums(is.na(testing))==0]
+train_set <- train_set %>% select(-'X',-'user_name',-'raw_timestamp_part_1', -'raw_timestamp_part_2', -'cvtd_timestamp')
+test_set <- test_set %>% select(-'X',-'user_name',-'raw_timestamp_part_1', -'raw_timestamp_part_2', -'cvtd_timestamp')
+dim(training); dim(testing)
+```
+
+Preprocess the data through scaling, centering, and KNN imputation  
+```{r}
+getnumerical <- which(lapply(train_set, class) %in% "numeric") #Get all numerical variable
+preproc <-preProcess(train_set[,getnumerical],method=c('knnImpute', 'center', 'scale')) #Impute, scale and center data sets
+pre_train_set <- predict(preproc,train_set[,getnumerical])
+pre_train_set$classe <- train_set$classe
+pre_test_set <-predict(preproc,test_set[,getnumerical])
+```
+
+Remove variables that has no meaning to the predictions, to do so we will use near zero variance function  
+```{r}
+nzv <- nearZeroVar(pre_train_set,saveMetrics=TRUE)
+pre_train_set <- pre_train_set[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(pre_test_set,saveMetrics=TRUE)
+pre_test_set <- pre_test_set[,nzv$nzv==FALSE]
+```
+
+#### Splitting the Data  
+```{r}
+set.seed(123)
+#Split data to 70 % and 30%
+split<- createDataPartition(pre_train_set$classe, p=.7, list=FALSE)
+train<- pre_train_set[split,]
+valid <- pre_train_set[-split,]
+dim(train) ; dim(valid)
+test <- pre_test_set
+```
+
+#### Creation of the model  
+
+In this project we will be using a random forest model.  
+We will fit the model with the training dataset and will use the validation set to see its performance.   
+Also, we will do cross validation with 10 folds in order to avoid overfitting.  
+```{r}
+ranfor <- train(classe ~., method="rf", data=train, trControl=trainControl(method="cv", number=10, verboseIter=FALSE),allowParallel=TRUE, importance=TRUE )
+ranfor
+ranfor$finalModel
+```     
+We can see here in the results that the model produced an accuracy of 99.30% and has an error rate of 0.6% with the used of the training set.
+
+
+This plot shows how much each variable affects the outcome.
+```{r}
+varImpPlot(ranfor$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 0.6, main = "Importance of the Individual Principal Components")
+```
+
+#### Model Evaluation and Validation  
+
+To see how much the model performs we will predict the validation data set and see its performance.  
+```{r}
+validation <- predict(ranfor, valid)
+evaluation <- confusionMatrix(valid$classe, validation)
+evaluation
+```
+Here with the used of the validation set we can see that the model has 99.18% accuracy and has an error rate of .82%.  
+
+The model performed similarly for both training and validation set. 
+
+#### Prediction  
+Now that we have a model we will now predict our testing  
+```{r}
+pred_test <- predict(ranfor, test)
+pred_test
+```
+Here's the predicted value of our model, these values will now be used for "Course Project Prediction Quiz".  
